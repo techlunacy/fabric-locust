@@ -6,7 +6,6 @@ AWS_SECRET_KEY = 'AWS SECRET ACCESS KEY'
 AWS_KEY_FILE = 'cloudformation-us-west-2'
 LOCAL_AWS_KEY_FILE = 'key for logging into the instances'
 
-AMI_SECURITY_GROUPS = ['security groups..... should have these created automatically if they are needed']
 AWS_USER_NAME = 'ubuntu'
 AWS_INSTANCE_SIZE = 't1.micro'
 

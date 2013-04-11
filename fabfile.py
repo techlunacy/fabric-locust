@@ -11,6 +11,8 @@ import configuration as config
 
 type = 'all'
 count = 0
+communication_rule = "locust-{0}".format(config.PROJECT)
+
 filter = {'instance-state-name' : 'running','tag:project' : config.PROJECT,'tag:type' : 'locust'}
 remote_folder = "/home/ubuntu/"
 
@@ -40,8 +42,8 @@ def start():
   """ start the processes
   """
   master_filter = dict(filter.items() + { 'tag:sub_type' : 'master'}.items())
-  ec2_connection = _get_ec2_connection()
-  search = ec2_connection.get_all_instances(filters=master_filter) 
+  aws_connection = _get_aws_connection()
+  search = aws_connection.get_all_instances(filters=master_filter) 
   master_public_url = ''
   for reservation in search:
     for instance in reservation.instances:
@@ -61,6 +63,8 @@ def url():
 
 @parallel
 def stop():
+  """ stop locust with extreme prejiduce 
+  """
   sudo('killall -9 screen')
 
 @parallel
@@ -69,7 +73,7 @@ def configure():
 
     """
     sudo('apt-get update -q')
-    sudo('apt-get install -q build-essential python-pip python-dev libevent-dev libzmq-dev --assume-yes')
+    sudo('apt-get install -q htop build-essential python-pip python-dev libevent-dev libzmq-dev --assume-yes')
     sudo('pip install  -q locustio  gevent-zeromq')
     sudo('pip install -Iv -q pyzmq==2.2.0.1')
     upload_directory()
@@ -87,46 +91,13 @@ def create():
       create()
       type = "all"
   else:
-      ec2_connection = _get_ec2_connection()
-      reservation = ec2_connection.run_instances(config.AMI_ID, key_name=config.AWS_KEY_FILE,instance_type=config.AWS_INSTANCE_SIZE,
-      security_group_ids=config.AMI_SECURITY_GROUPS,min_count=count, max_count=count)
-      
-      print(reservation.instances)
-      for instance in reservation.instances:
-        print(instance)
-        print('creating a new instance')
-        sleep(10)
-
-        instance.update()
-
-        while instance.state != 'running':
-            sleep(10)
-            print('sleep')
-            instance.update()
-
-        print('tagging instance {0} as a {1}'.format(instance.id, type))
-        instance.add_tag("project",config.PROJECT)
-        instance.add_tag("type","locust")
-        instance.add_tag("sub_type", type)
+      _create_security_group()
+      _create_instances()
 
 def terminate():
     """ Terminates all instances with the current
     """
-    ec2_connection = _get_ec2_connection()
-
-    print('Connected to {0}'.format(ec2_connection))
-
-    
-    if len(env.hosts) == 0:
-        print('no existing {0}'.format(type))
-    else:
-        search = ec2_connection.get_all_instances(filters=filter) 
-        
-        for reservation in search:
-          print('found {0} {1}'.format(len(reservation.instances),type))
-          for instance in reservation.instances:
-            print('Terminating instance {0}'.format(instance.id))
-            ec2_connection.terminate_instances([instance.id])
+    _terminate_instances()
 
 @parallel
 def upload_directory():
@@ -138,10 +109,9 @@ def upload_directory():
       put("*", remote_folder,True)
 
 def _set_env():
-    ec2_connection = _get_ec2_connection()
-    print('Connected to {0}'.format(ec2_connection))
+    aws_connection = _get_aws_connection()
 
-    search = ec2_connection.get_all_instances(filters=filter) 
+    search = aws_connection.get_all_instances(filters=filter) 
     
     for result in search:
       env.hosts = env.hosts + map(_get_instance_url, result.instances)
@@ -153,14 +123,60 @@ def _set_env():
     print(env.hosts)
     return 
 
+def _create_security_group():
+    aws_connection = _get_aws_connection()
+    security_group_names = [x.name for x in aws_connection.get_all_security_groups()]
+    if communication_rule not in security_group_names:
+      print(red("Security group {0} does not exist".format(communication_rule)))
+      print('Creating.....')
+      security_group = aws_connection.create_security_group(communication_rule, 'locust communications')
+      security_group.authorize('tcp', 5557, 5558, src_group=security_group)
+      security_group.authorize('tcp', 8089, 8089, '0.0.0.0/0')
+      security_group.authorize('tcp', 22, 22, '0.0.0.0/0')
+
+def _create_instances():
+    aws_connection = _get_aws_connection()
+
+    reservation = aws_connection.run_instances(config.AMI_ID, key_name=config.AWS_KEY_FILE,instance_type=config.AWS_INSTANCE_SIZE,
+    security_group_ids=[communication_rule], min_count=count, max_count=count)
+    
+    print(reservation.instances)
+    for instance in reservation.instances:
+      print(instance)
+      print('creating a new instance')
+      sleep(10)
+
+      instance.update()
+
+      while instance.state != 'running':
+          sleep(10)
+          print('sleep')
+          instance.update()
+
+      print('tagging instance {0} as a {1}'.format(instance.id, type))
+      instance.add_tag("project",config.PROJECT)
+      instance.add_tag("type","locust")
+      instance.add_tag("sub_type", type)
+
+def _terminate_instances():
+    aws_connection = _get_aws_connection()
+    search = aws_connection.get_all_instances(filters=filter) 
+    
+    for reservation in search:
+      print('found {0} {1}'.format(len(reservation.instances),type))
+      for instance in reservation.instances:
+        print(red('Terminating instance {0}'.format(instance.id)))
+        aws_connection.terminate_instances([instance.id])
 
 def _get_instance_url(x):
     return x.public_dns_name
 
-def _get_ec2_connection():
+def _get_aws_connection():
     """ Creates an EC2 Connection for the specified region.
     """
-    return connect_to_region(config.AWS_REGION, aws_access_key_id=config.AWS_API_KEY, aws_secret_access_key=config.AWS_SECRET_KEY)
+    aws_connection = connect_to_region(config.AWS_REGION, aws_access_key_id=config.AWS_API_KEY, aws_secret_access_key=config.AWS_SECRET_KEY)
+    print('Connected to {0}'.format(aws_connection))
+    return aws_connection
 
 
 
