@@ -123,6 +123,19 @@ def _set_env():
     print(env.hosts)
     return 
 
+def _terminate_security_group():
+    aws_connection = _get_aws_connection()
+    security_groups = aws_connection.get_all_security_groups()
+    specific_security_group = [x for x in security_groups if x.name == communication_rule]
+    if len(specific_security_group) == 1:
+      has_instances = len([x for x in specific_security_group[0].instances()]) > 0
+      if not has_instances:
+        aws_connection.delete_security_group(communication_rule)
+      else:
+        print(red("Security group {0} has instances".format(communication_rule)))
+    else:
+      print(red("Security group {0} does not exist".format(communication_rule)))
+
 def _create_security_group():
     aws_connection = _get_aws_connection()
     security_group_names = [x.name for x in aws_connection.get_all_security_groups()]
@@ -167,6 +180,7 @@ def _terminate_instances():
       for instance in reservation.instances:
         print(red('Terminating instance {0}'.format(instance.id)))
         aws_connection.terminate_instances([instance.id])
+    _terminate_security_group()
 
 def _get_instance_url(x):
     return x.public_dns_name
