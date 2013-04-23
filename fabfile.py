@@ -6,6 +6,7 @@ from fabric.api import task, settings, sudo,run, execute, env, parallel, cd, lcd
 from fabric.contrib.files import upload_template, put
 from fabric.colors import *
 from boto.ec2 import EC2Connection, get_region, connect_to_region
+from boto.ec2.autoscale import AutoScaleConnection, AutoScalingGroup, LaunchConfiguration
 
 import configuration as config
 
@@ -135,10 +136,22 @@ def _create_security_group():
       security_group.authorize('tcp', 22, 22, '0.0.0.0/0')
 
 def _create_instances():
+    autoscale_connection = _get_autoscale_connection()
     aws_connection = _get_aws_connection()
+    group_name = communication_rule+'-'+type
+    lc = LaunchConfiguration(name=group_name+'-launch-config', image_id=config.AMI_ID,
+                             key_name=config.AWS_KEY_FILE,
+                             security_groups=[communication_rule])
+    autoscale_connection.create_launch_configuration(lc)
+    ag = AutoScalingGroup(group_name=group_name+'-launch-group', load_balancers=['my-lb'],
+                          availability_zones=['us-west-2a','us-west-2b', 'us-west-2c'],
+                          launch_config=lc, min_size=count, max_size=count,
+                          connection=autoscale_connection)
+    autoscale_connection.create_auto_scaling_group(ag)
 
-    reservation = aws_connection.run_instances(config.AMI_ID, key_name=config.AWS_KEY_FILE,instance_type=config.AWS_INSTANCE_SIZE,
-    security_group_ids=[communication_rule], min_count=count, max_count=count)
+    group = autoscale.get_all_groups(['mygroupname'])[0]
+    instance_ids = [i.id for i in group.instances]
+    reservation = ec2.get_all_instances(instance_ids)
     
     print(reservation.instances)
     for instance in reservation.instances:
@@ -178,5 +191,11 @@ def _get_aws_connection():
     print('Connected to {0}'.format(aws_connection))
     return aws_connection
 
-
+def _get_autoscale_connection():
+    """ Creates an Auto Scale Connection for the specified region.
+    
+    """ 
+    autoscale_connection = AutoScaleConnection(aws_access_key_id=config.AWS_API_KEY, aws_secret_access_key=config.AWS_SECRET_KEY,region=get_region(config.AWS_REGION))
+    print('Connected to {0}'.format(autoscale_connection))
+    return autoscale_connection
 
