@@ -50,9 +50,9 @@ def start():
       master_public_url = instance.public_dns_name
   remote_file_location = remote_folder + config.LOCAL_LOCUST_FILE
   if env.host_string == master_public_url:
-      run('screen -d -m bash -c "locust -f {0} -H {1} --ramp --master"'.format(remote_file_location, config.TARGET_DOMAIN), pty=False)
+      run('screen -d -m bash -c "locust -f {0} -H {1} --master"'.format(remote_file_location, config.TARGET_DOMAIN), pty=False)
   else:
-      run('screen -d -m bash -c "locust -f {0} -H {1} --slave --ramp --master-host={2}"'.format(remote_file_location, config.TARGET_DOMAIN, master_public_url), pty=False)
+      run('screen -d -m bash -c "locust -f {0} -H {1} --slave --master-host={2}"'.format(remote_file_location, config.TARGET_DOMAIN, master_public_url), pty=False)
   print(green("website url: http://{0}:8089".format(master_public_url)))
 
 def list():
@@ -170,6 +170,7 @@ def _create_instances():
       instance.add_tag("project",config.PROJECT)
       instance.add_tag("type","locust")
       instance.add_tag("sub_type", type)
+      instance.add_tag("Name", config.PROJECT +"-locust-"+ type)
 
 def _terminate_instances():
     aws_connection = _get_aws_connection()
